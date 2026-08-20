@@ -1,0 +1,6 @@
+{
+    "require": {
+        "smarty/smarty": "^4.5",
+        "nadar/quill-delta-parser": "^3.4"
+    }
+}

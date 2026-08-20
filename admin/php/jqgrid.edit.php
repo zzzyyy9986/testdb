@@ -3,21 +3,29 @@
     include $_SERVER["DOCUMENT_ROOT"] . "/php/functions.php";
     include $_SERVER["DOCUMENT_ROOT"] . "/admin/php/functions.admin.php";
 
+    admin_require_auth();
     db_connect();
 
-    $tblName = $_GET["tblName"];
-    $table = new ObjectTable($tblName);
-
-    /*$id = -1;
-    if (isset($_POST) && (isset($_POST["id"])) && (trim($_POST["id"] != "_empty"))) {
-        $id = $_POST["id"];
-    }*/
-    $id = $_POST["ID_" . $tblName];
-    if ($_POST["oper"] == "del") {
-        $id = $_POST["id"];
+    $tblName = isset($_GET["tblName"]) ? $_GET["tblName"] : "";
+    if (!is_allowed_admin_table($tblName)) {
+        http_response_code(400);
+        die("Invalid table");
     }
 
-    $table->saveData($_POST["oper"], $id, $_POST);
+    $oper = isset($_POST["oper"]) ? $_POST["oper"] : "";
+    if (!in_array($oper, ["add", "edit", "del"], true)) {
+        http_response_code(400);
+        die("Invalid operation");
+    }
+
+    $table = new ObjectTable($tblName);
+
+    $id = isset($_POST["ID_" . $tblName]) ? $_POST["ID_" . $tblName] : 0;
+    if ($oper == "del") {
+        $id = isset($_POST["id"]) ? $_POST["id"] : 0;
+    }
+
+    $table->saveData($oper, $id, $_POST);
 
     db_disconnect();
 ?>

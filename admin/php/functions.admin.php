@@ -35,7 +35,17 @@
         public $editOnly = false;
         public $readOnly = false;
 
+        /**
+         * Инициализирует таблицу jqGrid по имени.
+         * Проверяет имя таблицы через is_allowed_admin_table().
+         *
+         * @param string $tableName Имя таблицы (NL_PROP_RESALE, NL_HOUSES и т.д.).
+         */
         function __construct($tableName) {
+            if (!is_allowed_admin_table($tableName)) {
+                http_response_code(400);
+                die("Invalid table");
+            }
             $this->dbName = $tableName;
             $this->colArray = $this->getTableColArray();
             $this->leftJoins = $this->getTableLeftJoins();
@@ -43,6 +53,16 @@
             $this->jqGridCustom = $this->getjqGridCustom();
         }
 
+        /**
+         * Возвращает описание колонки для jqGrid по логическому имени поля.
+         *
+         * Для журнала вторички поддерживает select-поля:
+         * ID_NL_VIEW, ID_NL_HOUSES, ID_NL_MATERIAL.
+         *
+         * @param string $colName Логическое имя (ID, NL_SHORT, ID_NL_HOUSES…).
+         * @param string $prefix  Префикс таблицы без NL_ (VIEW, HOUSES, PROP_RESALE…).
+         * @return ObjectParam
+         */
         private function getMainTableCol($colName, $prefix) {
             $colObject = new ObjectParam();
             $colObject->dbName = "NL_" . $prefix . "_" . substr($colName, 3);
@@ -154,6 +174,20 @@
                     $colObject->type = "select";
                     $colObject->render = true;
                     break;
+                /** Select «Тип дома» (NL_HOUSES) в форме квартиры. */
+                case "ID_NL_HOUSES":
+                    $colObject->dbName = "ID_NL_HOUSES";
+                    $colObject->rusName = "Тип дома";
+                    $colObject->type = "select";
+                    $colObject->render = true;
+                    break;
+                /** Select «Материал дома» (NL_MATERIAL) в форме квартиры. */
+                case "ID_NL_MATERIAL":
+                    $colObject->dbName = "ID_NL_MATERIAL";
+                    $colObject->rusName = "Материал дома";
+                    $colObject->type = "select";
+                    $colObject->render = true;
+                    break;
                 case "NL_FLOOR":
                     $colObject->rusName = "Этаж";
                     $colObject->type = "string";
@@ -197,6 +231,13 @@
             return $colObject;
         }
 
+        /**
+         * Собирает массив колонок по списку имён полей БД.
+         *
+         * @param string   $tableName Префикс таблицы (VIEW, MATERIAL, HOUSES…).
+         * @param string[] $colNames  Список имён колонок.
+         * @return ObjectParam[]
+         */
         private function getTableColArrayByColumnNames($tableName, $colNames) {
             $table = Array();
 
@@ -223,6 +264,15 @@
             return $table;
         }
 
+        /**
+         * Возвращает набор колонок для текущей таблицы.
+         *
+         * Справочники NL_MATERIAL и NL_HOUSES устроены по образцу NL_VIEW.
+         * NL_HOUSES дополнительно содержит ID_NL_MATERIAL.
+         * NL_PROP_RESALE включает ID_NL_HOUSES и ID_NL_MATERIAL.
+         *
+         * @return ObjectParam[]
+         */
         private function getTableColArray() {
             $table = Array();
 
@@ -236,8 +286,19 @@
                     $colNames = ["NL_VIEW_SHORT"];
                     $table = $this->getTableColArrayByColumnNames($tableName, $colNames);
                     break;
+                /** Справочник материала дома (аналог NL_VIEW). */
+                case "NL_MATERIAL":
+                    $colNames = ["NL_MATERIAL_SHORT"];
+                    $table = $this->getTableColArrayByColumnNames($tableName, $colNames);
+                    break;
+                /** Справочник типа дома + связь с NL_MATERIAL. */
+                case "NL_HOUSES":
+                    $colNames = ["NL_HOUSES_SHORT", "ID_NL_MATERIAL"];
+                    $table = $this->getTableColArrayByColumnNames($tableName, $colNames);
+                    break;
+                /** Журнал вторички с полями ID_NL_HOUSES и ID_NL_MATERIAL. */
                 case "NL_PROP_RESALE":
-                    $colNames = ["NL_PROP_RESALE_AREA_FULL", "NL_PROP_RESALE_ADDRESS", "NL_PROP_RESALE_FLOOR", "NL_PROP_RESALE_COST_TOTAL", "NL_PROP_RESALE_PHONE_OWNER", "ID_NL_VIEW", "ID_NL_USER", "NL_PROP_RESALE_PHONE", "NL_PROP_RESALE_PHOTO_URLS", "NL_PROP_RESALE_DESCRIPTION"];
+                    $colNames = ["NL_PROP_RESALE_AREA_FULL", "NL_PROP_RESALE_ADDRESS", "NL_PROP_RESALE_FLOOR", "NL_PROP_RESALE_COST_TOTAL", "NL_PROP_RESALE_PHONE_OWNER", "ID_NL_VIEW", "ID_NL_HOUSES", "ID_NL_MATERIAL", "ID_NL_USER", "NL_PROP_RESALE_PHONE", "NL_PROP_RESALE_PHOTO_URLS", "NL_PROP_RESALE_DESCRIPTION"];
                     $table = $this->getTableColArrayByColumnNames($tableName, $colNames);
                     break;
             }
@@ -245,13 +306,26 @@
             return $table;
         }
 
+        /**
+         * Возвращает список таблиц для LEFT JOIN при выборке данных.
+         *
+         * NL_HOUSES — join NL_MATERIAL для отображения названия материала.
+         * NL_PROP_RESALE — join NL_VIEW, NL_HOUSES, NL_MATERIAL, NL_USER.
+         *
+         * @return string[]
+         */
         private function getTableLeftJoins() {
             switch ($this->dbName) {
                 case "NL_USER":
                     return ["NL_USER_PERMISSION"];
                     break;
+                /** Join материала для отображения NL_MATERIAL_SHORT. */
+                case "NL_HOUSES":
+                    return ["NL_MATERIAL"];
+                    break;
+                /** Join справочников вида, дома, материала и пользователя. */
                 case "NL_PROP_RESALE":
-                    return ["NL_VIEW", "NL_USER"];
+                    return ["NL_VIEW", "NL_HOUSES", "NL_MATERIAL", "NL_USER"];
                     break;
                 default:
                     return [];
@@ -724,6 +798,12 @@ function showOnlyMy(jqgrid, row) {
             return $data;
         }
 
+        /**
+         * Возвращает XML-данные jqGrid с фильтрацией и сортировкой.
+         * Параметры sidx/sord и значения поиска валидируются и экранируются.
+         *
+         * @return string XML для jqGrid.
+         */
         public function showData() {
             // Номер запришиваемой страницы
             if (!isset($_GET['page'])) {
@@ -738,12 +818,19 @@ function showOnlyMy(jqgrid, row) {
                 $limit = $_GET['rows'];
             }
             // Поле, по которому следует производить сортировку
-            $sidx = $_GET['sidx'];
+            $sidx = isset($_GET['sidx']) ? $_GET['sidx'] : ("ID_" . $this->dbName);
+            $allowedSort = ["1", "ID_" . $this->dbName];
+            for ($j = 0; $j < (count($this->colArray) / 2); $j++) {
+                $allowedSort[] = $this->colArray[$j]->dbName;
+            }
+            if (!in_array($sidx, $allowedSort, true)) {
+                $sidx = "ID_" . $this->dbName;
+            }
             // Направление сортировки
             if (!isset($_GET['sord'])) {
                 $sord = "ASC";
             } else {
-                $sord = $_GET['sord'];
+                $sord = strtoupper($_GET['sord']) === "DESC" ? "DESC" : "ASC";
             }
             // Выполним запрос, который вернет суммарное кол-во записей в таблице
             $search_where = "(1=1)";
@@ -760,14 +847,14 @@ function showOnlyMy(jqgrid, row) {
                         $search_field = str_replace("_to", "", $search_field);
                         $search_value = "$search_field <= " . $value;
                     } else {
-                        $search_value = "$search_field = $value";
+                        $search_value = "$search_field = " . db_escape($value);
                         if (strpos($key, "ID_") === 0) {
-                            $search_value = "$search_field LIKE '%" . $value . "%'";
+                            $search_value = "$search_field LIKE " . db_escape('%' . $value . '%');
                         } else {
                             foreach ($this->colArray as $col) {
                                 if ($col->dbName == $key) {
                                     if (($col->type == "string") || ($col->type == "rich") || ($col->type == "photo") || ($col->type == "photos") || ($col->type == "file") || ($col->type == "date") || ($col->type == "checkbox") || ($col->type == "map")) {
-                                        $search_value = "$search_field LIKE '%" . $value . "%'";
+                                        $search_value = "$search_field LIKE " . db_escape('%' . $value . '%');
                                     }
                                     break;
                                 }
@@ -829,6 +916,15 @@ function showOnlyMy(jqgrid, row) {
             return $s;
         }
 
+        /**
+         * Сохраняет строку таблицы: добавление, редактирование или удаление.
+         * Значения полей экранируются через db_escape() / db_int().
+         *
+         * @param string $oper Операция: add, edit или del.
+         * @param mixed  $id   ID записи (для add не используется).
+         * @param array  $post Данные формы jqGrid.
+         * @return void
+         */
         public function saveData($oper, $id, $post) {
             // "add" - insert, "edit" - update, "del" - delete
 
@@ -842,6 +938,7 @@ function showOnlyMy(jqgrid, row) {
             }
 
             if ($oper != "add") {
+                $id = db_int($id);
                 $query_cur = "SELECT * FROM " . $this->dbName . " WHERE ID_" . $this->dbName . " = " . $id;
                 $res_cur = db_query($query_cur) or die(db_error($query_cur));
                 $row_cur = db_fetch_assoc($res_cur);
@@ -872,7 +969,7 @@ function showOnlyMy(jqgrid, row) {
                 $user_ip = 'unknown';
             }
             if (15 < strlen($user_ip)) {
-                $ar = split(', ', $user_ip);
+                $ar = preg_split('/,\s*/', $user_ip);
                 for ($i = sizeof($ar) - 1; $i > 0; $i--) {
                     if ($ar[$i] != '' and !preg_match('/[a-zA-Zа-яА-Я]/', $ar[$i])) {
                         $user_ip = $ar[$i];
@@ -905,24 +1002,24 @@ function showOnlyMy(jqgrid, row) {
                     if ((!isset($post[$col->dbName])) || (trim($post[$col->dbName]) == "")) {
                         array_push($values, "NULL");
                     } elseif (($col->type == "string") || ($col->type == "rich") || ($col->type == "photo") || ($col->type == "photos") || ($col->type == "file") || ($col->type == "date") || ($col->type == "checkbox") || ($col->type == "map")) {
-                        array_push($values, "'" . $post[$col->dbName] . "'");
+                        array_push($values, db_escape($post[$col->dbName]));
                     } elseif ($col->type == "encrypted") {
-                        array_push($values, "AES_ENCRYPT('" . $post[$col->dbName] . "','" . AESKEY . "')");
+                        array_push($values, "AES_ENCRYPT(" . db_escape($post[$col->dbName]) . ",'" . AESKEY . "')");
                     } else {
-                        array_push($values, $post[$col->dbName]);
+                        array_push($values, db_int($post[$col->dbName]));
                     }
 
                     if ($col->type != "encrypted") {
                         $valold = "''";
-                        if (db_num_rows($res_cur) > 0) {
-                            $valold = "'" . $row_cur[$col->dbName] . "'";
+                        if (isset($res_cur) && db_num_rows($res_cur) > 0) {
+                            $valold = db_escape($row_cur[$col->dbName]);
                         }
                         $valnew = "''";
                         if ($oper != "del") {
-                            $valnew = "'" . $post[$col->dbName] . "'";
+                            $valnew = db_escape(isset($post[$col->dbName]) ? $post[$col->dbName] : "");
                         }
 
-                        $query_log_detail = "INSERT INTO NL_LOG_DETAIL(ID_NL_LOG, NL_LOG_DETAIL_OLD, NL_LOG_DETAIL_NEW, NL_LOG_DETAIL_FIELD) VALUES (" . $row_log["ID_LOG"] . ", " . $valold . "," . $valnew . ", '" . $col->dbName . "')";
+                        $query_log_detail = "INSERT INTO NL_LOG_DETAIL(ID_NL_LOG, NL_LOG_DETAIL_OLD, NL_LOG_DETAIL_NEW, NL_LOG_DETAIL_FIELD) VALUES (" . $row_log["ID_LOG"] . ", " . $valold . "," . $valnew . ", " . db_escape($col->dbName) . ")";
                         db_query($query_log_detail) or die(db_error($query_log_detail));
                     }
                 }
@@ -969,12 +1066,16 @@ function showOnlyMy(jqgrid, row) {
                 }
                 $query .= " WHERE ID_" . $this->dbName . " = " . $id;
             } elseif ($oper == "del") {
-                $query = "DELETE FROM " . $this->dbName . " WHERE ID_" . $this->dbName . " = " . $id;
+                $query = "DELETE FROM " . $this->dbName . " WHERE ID_" . $this->dbName . " = " . db_int($id);
             }
-            echo $query;
             db_query($query) or die(db_error($query));
         }
 
+        /**
+         * Формирует строку LEFT JOIN для SQL-запроса на основе $this->leftJoins.
+         *
+         * @return string Фрагмент SQL с LEFT JOIN.
+         */
         public function get_query_left_joins() {
             $leftJoin = "";
             for ($i = 0; $i < count($this->leftJoins); $i++) {
@@ -986,13 +1087,23 @@ function showOnlyMy(jqgrid, row) {
 
     }
 
+    /**
+     * Авторизует пользователя по логину и паролю (AES_ENCRYPT).
+     * При успехе обновляет сессию и вызывает session_regenerate_id().
+     *
+     * @param string $login Логин пользователя.
+     * @param string $pass  Пароль в открытом виде.
+     * @return void
+     */
     function user_auth($login, $pass) {
-        $id_user = $_SESSION["ID_NL_USER"] ? $_SESSION["ID_NL_USER"] : -1;
-        $query = "SELECT * FROM NL_USER au WHERE ((au.NL_USER_LOGIN = '" . $login . "') AND (au.NL_USER_PASSWORD = aes_encrypt('" . $pass . "','" . AESKEY . "')) OR (au.ID_NL_USER = " . $id_user . "))";
-        //echo $query;
+        $login = db_real_escape_string($login);
+        $pass = db_real_escape_string($pass);
+        $id_user = isset($_SESSION["ID_NL_USER"]) ? (int)$_SESSION["ID_NL_USER"] : -1;
+        $query = "SELECT * FROM NL_USER au WHERE ((au.NL_USER_LOGIN = '" . $login . "' AND au.NL_USER_PASSWORD = AES_ENCRYPT('" . $pass . "','" . AESKEY . "')) OR (au.ID_NL_USER = " . $id_user . "))";
         $res = db_query($query) or die(db_error($query));
         if (db_num_rows($res) > 0) {
             $row = db_fetch_assoc($res);
+            session_regenerate_id(true);
             $_SESSION["ID_NL_USER"] = $row["ID_NL_USER"];
             $_SESSION["NL_USER_LOGIN"] = $row["NL_USER_LOGIN"];
             $_SESSION["NL_USER_SHORT"] = $row["NL_USER_SHORT"];
