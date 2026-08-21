@@ -47,9 +47,17 @@ docker compose up -d --build
 ### Деплой на сервер
 
 1. Скопируйте проект на сервер.
-2. Настройте `.env` (смените `DB_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `AESKEY` на продакшене).
+2. Настройте `.env` (смените `DB_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `AESKEY` на продакшене; `APP_PORT=8090` если nginx на хосте).
 3. Запустите `docker compose up -d --build`.
-4. Пробросьте порт `APP_PORT` через nginx/caddy или измените на `80:80` в `docker-compose.yml`.
+4. Nginx на хосте (пример для `testdb.djzazavi.ru` → порт `8090`):
+
+```bash
+sudo cp deploy/nginx/testdb.djzazavi.ru.conf /etc/nginx/sites-available/
+sudo ln -sf /etc/nginx/sites-available/testdb.djzazavi.ru.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d testdb.djzazavi.ru   # HTTPS, опционально
+```
+
 5. Каталог `img/` монтируется как volume — загруженные файлы сохраняются между перезапусками.
 
 ---
