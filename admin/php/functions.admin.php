@@ -1,5 +1,13 @@
 <?
-    session_start();
+    if (session_status() === PHP_SESSION_NONE) {
+        session_set_cookie_params([
+            "lifetime" => 0,
+            "path" => "/",
+            "httponly" => true,
+            "samesite" => "Strict",
+        ]);
+        session_start();
+    }
     $url = explode("?", $_SERVER["REQUEST_URI"], 5);
 
     $page_array = explode("/admin/", $url[0]);
@@ -195,6 +203,18 @@
                     $colObject->maxLength = 25;
                     $colObject->width = 40;
                     break;
+                case "NL_FLOORS":
+                    $colObject->rusName = "Этажность";
+                    $colObject->type = "integer";
+                    $colObject->render = true;
+                    $colObject->width = 60;
+                    break;
+                case "NL_YEAR":
+                    $colObject->rusName = "Год постройки";
+                    $colObject->type = "integer";
+                    $colObject->render = true;
+                    $colObject->width = 80;
+                    break;
                 case "NL_AREA_FULL":
                     $colObject->rusName = "Площадь (общая)";
                     $colObject->type = "float";
@@ -293,7 +313,7 @@
                     break;
                 /** Справочник типа дома + связь с NL_MATERIAL. */
                 case "NL_HOUSES":
-                    $colNames = ["NL_HOUSES_SHORT", "ID_NL_MATERIAL"];
+                    $colNames = ["NL_HOUSES_SHORT", "NL_HOUSES_FULL", "NL_HOUSES_FLOORS", "NL_HOUSES_YEAR", "ID_NL_MATERIAL"];
                     $table = $this->getTableColArrayByColumnNames($tableName, $colNames);
                     break;
                 /** Журнал вторички с полями ID_NL_HOUSES и ID_NL_MATERIAL. */
@@ -336,11 +356,11 @@
         private function getTableWhere() {
             switch ($this->dbName) {
                 case "NL_USER":
-                    return "(tbl.ID_NL_USER_PERMISSION != 2) AND (2 = " . $_SESSION["ID_NL_USER_PERMISSION"] . ")";
+                    return "(tbl.ID_NL_USER_PERMISSION != 2) AND (2 = " . db_int($_SESSION["ID_NL_USER_PERMISSION"]) . ")";
                     break;
                 case "NL_PROP_RESALE":
-                    if ($_SESSION["onlymy"] == "1") {
-                        return "(tbl.ID_NL_USER = " . $_SESSION["ID_NL_USER"] . ")";
+                    if (isset($_SESSION["onlymy"]) && $_SESSION["onlymy"] == "1") {
+                        return "(tbl.ID_NL_USER = " . db_int($_SESSION["ID_NL_USER"]) . ")";
                     } else {
                         return "";
                     }
@@ -360,7 +380,7 @@ function showOnlyMy(jqgrid, row) {
     ';
                 if ($_SESSION["ID_NL_USER_PERMISSION"] != "2") {
                     $return .= '
-    if (row["ID_NL_USER"] != "' . $_SESSION["NL_USER_SHORT"] . '") {
+    if (row["ID_NL_USER"] != ' . json_encode((string)$_SESSION["ID_NL_USER"]) . ') {
         $("#edit_" + jqgrid + "_top, #del_" + jqgrid + "_top").hide();
     } else {
         $("#edit_" + jqgrid + "_top, #del_" + jqgrid + "_top").show();
@@ -429,7 +449,7 @@ function showOnlyMy(jqgrid, row) {
             switch ($this->dbName) {
                 case "NL_PROP_RESALE":
                     $afterShowFormEdit .= '
-                        if ($(formid.selector + " #ID_NL_USER").val() == ' . $_SESSION["ID_NL_USER"] . ') {
+                        if ($(formid.selector + " #ID_NL_USER").val() == ' . json_encode((string)$_SESSION["ID_NL_USER"]) . ') {
                             $(formid.selector + " #tr_' . $this->dbName . '_PHONE_OWNER").css("display", "");
                         } else {
                             $(formid.selector + " #tr_' . $this->dbName . '_PHONE_OWNER").css("display", "none");
@@ -805,17 +825,23 @@ function showOnlyMy(jqgrid, row) {
          * @return string XML для jqGrid.
          */
         public function showData() {
-            // Номер запришиваемой страницы
             if (!isset($_GET['page'])) {
                 $page = 1;
             } else {
-                $page = $_GET['page'];
+                $page = db_int($_GET['page']);
+                if ($page < 1) {
+                    $page = 1;
+                }
             }
-            // Количество запрашиваемых записей
             if (!isset($_GET['rows'])) {
                 $limit = 50;
             } else {
-                $limit = $_GET['rows'];
+                $limit = db_int($_GET['rows']);
+                if ($limit < 1) {
+                    $limit = 50;
+                } elseif ($limit > 1000) {
+                    $limit = 1000;
+                }
             }
             // Поле, по которому следует производить сортировку
             $sidx = isset($_GET['sidx']) ? $_GET['sidx'] : ("ID_" . $this->dbName);
@@ -834,36 +860,43 @@ function showOnlyMy(jqgrid, row) {
             }
             // Выполним запрос, который вернет суммарное кол-во записей в таблице
             $search_where = "(1=1)";
+            $allowedSearch = [];
+            for ($j = 0; $j < (count($this->colArray) / 2); $j++) {
+                $allowedSearch[] = $this->colArray[$j]->dbName;
+                $allowedSearch[] = $this->colArray[$j]->dbName . "_from";
+                $allowedSearch[] = $this->colArray[$j]->dbName . "_to";
+            }
             foreach ($_GET as $key => $value) {
-                if (strpos($key, "NL_") !== false) {
-                    $search_field = $key;
+                if (!in_array($key, $allowedSearch, true) || $value === "") {
+                    continue;
+                }
+                $search_field = $key;
+                if (strpos($key, "ID_") === 0) {
+                    $search_field = substr($key, 3) . "_SHORT";
+                }
+                if (strpos($key, "_from") !== false) {
+                    $search_field = str_replace("_from", "", $search_field);
+                    $search_value = $search_field . " >= " . db_escape($value);
+                } elseif (strpos($key, "_to") !== false) {
+                    $search_field = str_replace("_to", "", $search_field);
+                    $search_value = $search_field . " <= " . db_escape($value);
+                } else {
+                    $search_value = $search_field . " = " . db_escape($value);
                     if (strpos($key, "ID_") === 0) {
-                        $search_field = substr($key, 3) . "_SHORT";
-                    }
-                    if (strpos($key, "_from") !== false) {
-                        $search_field = str_replace("_from", "", $search_field);
-                        $search_value = "$search_field >= " . $value;
-                    } elseif (strpos($key, "_to") !== false) {
-                        $search_field = str_replace("_to", "", $search_field);
-                        $search_value = "$search_field <= " . $value;
+                        $search_value = $search_field . " LIKE " . db_escape('%' . $value . '%');
                     } else {
-                        $search_value = "$search_field = " . db_escape($value);
-                        if (strpos($key, "ID_") === 0) {
-                            $search_value = "$search_field LIKE " . db_escape('%' . $value . '%');
-                        } else {
-                            foreach ($this->colArray as $col) {
-                                if ($col->dbName == $key) {
-                                    if (($col->type == "string") || ($col->type == "rich") || ($col->type == "photo") || ($col->type == "photos") || ($col->type == "file") || ($col->type == "date") || ($col->type == "checkbox") || ($col->type == "map")) {
-                                        $search_value = "$search_field LIKE " . db_escape('%' . $value . '%');
-                                    }
-                                    break;
+                        foreach ($this->colArray as $col) {
+                            if ($col->dbName == $key) {
+                                if (($col->type == "string") || ($col->type == "rich") || ($col->type == "photo") || ($col->type == "photos") || ($col->type == "file") || ($col->type == "date") || ($col->type == "checkbox") || ($col->type == "map")) {
+                                    $search_value = $search_field . " LIKE " . db_escape('%' . $value . '%');
                                 }
+                                break;
                             }
                         }
                     }
-
-                    $search_where .= " AND ($search_value)";
                 }
+
+                $search_where .= " AND (" . $search_value . ")";
             }
 
             $leftJoin = $this->get_query_left_joins();
@@ -902,9 +935,10 @@ function showOnlyMy(jqgrid, row) {
             // Не забудьте обернуть текстовые данные в <![CDATA[]]>
             if (count($data) > 0) {
                 for ($i = 0; $i < count($data); $i++) {
-                    $s .= '<row id="' . $data[$i][0] . '">';
+                    $rowId = htmlspecialchars((string)$data[$i][0], ENT_QUOTES, "UTF-8");
+                    $s .= '<row id="' . $rowId . '">';
                     for ($j = 0; $j < count($data[$i]); $j++) {
-                        $s .= '<cell><![CDATA[' . $data[$i][$j] . ']]></cell>';
+                        $s .= '<cell><![CDATA[' . str_replace("]]>", "]]]]><![CDATA[>", (string)$data[$i][$j]) . ']]></cell>';
                     }
                     $s .= "</row>";
                 }
@@ -926,7 +960,10 @@ function showOnlyMy(jqgrid, row) {
          * @return void
          */
         public function saveData($oper, $id, $post) {
-            // "add" - insert, "edit" - update, "del" - delete
+            if (!in_array($oper, ["add", "edit", "del"], true)) {
+                http_response_code(400);
+                die("Invalid operation");
+            }
 
             if ($this->readOnly) {
                 die();
@@ -945,7 +982,7 @@ function showOnlyMy(jqgrid, row) {
 
                 if ($_SESSION["ID_NL_USER_PERMISSION"] == "3") {
                     die();
-                } elseif (($_SESSION["ID_NL_USER_PERMISSION"] == "1") && ($row_cur["ID_NL_USER"] != $_SESSION["ID_NL_USER"])) {
+                } elseif (($_SESSION["ID_NL_USER_PERMISSION"] == "1") && isset($row_cur["ID_NL_USER"]) && ($row_cur["ID_NL_USER"] != $_SESSION["ID_NL_USER"])) {
                     die();
                 }
             }
@@ -984,7 +1021,13 @@ function showOnlyMy(jqgrid, row) {
                 $user_ip = 'unknown';
             }
             // log master
-            $query_log = "INSERT INTO NL_LOG(NL_LOG_DATE, NL_LOG_TIME, NL_LOG_IP, NL_LOG_IUD, NL_LOG_TABLE_NAME, ID_NL_USER) VALUES('" . date("Y.m.d") . "', '" . date("H:i:s") . "', '" . $user_ip . "', '" . $oper . "', '" . $this->dbName . "', " . $_SESSION["ID_NL_USER"] . " )";
+            $query_log = "INSERT INTO NL_LOG(NL_LOG_DATE, NL_LOG_TIME, NL_LOG_IP, NL_LOG_IUD, NL_LOG_TABLE_NAME, ID_NL_USER) VALUES("
+                . db_escape(date("Y.m.d")) . ", "
+                . db_escape(date("H:i:s")) . ", "
+                . db_escape($user_ip) . ", "
+                . db_escape($oper) . ", "
+                . db_escape($this->dbName) . ", "
+                . db_int($_SESSION["ID_NL_USER"]) . ")";
             db_query($query_log) or die(db_error($query_log));
             $query_log = "SELECT LAST_INSERT_ID() AS ID_LOG";
             $res_log = db_query($query_log) or die(db_error($query_log));
@@ -1005,6 +1048,8 @@ function showOnlyMy(jqgrid, row) {
                         array_push($values, db_escape($post[$col->dbName]));
                     } elseif ($col->type == "encrypted") {
                         array_push($values, "AES_ENCRYPT(" . db_escape($post[$col->dbName]) . ",'" . AESKEY . "')");
+                    } elseif ($col->type == "float") {
+                        array_push($values, db_float($post[$col->dbName]));
                     } else {
                         array_push($values, db_int($post[$col->dbName]));
                     }
@@ -1115,18 +1160,20 @@ function showOnlyMy(jqgrid, row) {
     }
 
     function user_logout() {
-        unset($_SESSION["ID_NL_USER"]);
-        unset($_SESSION["NL_USER_LOGIN"]);
-        unset($_SESSION["NL_USER_SHORT"]);
-        unset($_SESSION["NL_USER_FULL"]);
-        unset($_SESSION["ID_NL_USER_PERMISSION"]);
+        $_SESSION = [];
+        if (ini_get("session.use_cookies")) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), "", time() - 42000, $params["path"], $params["domain"], $params["secure"], $params["httponly"]);
+        }
+        session_destroy();
     }
 
     function includeAdminPartsByLvl($wrap_start = "", $wrap_end = "") {
         global $page;
 
+        $page = admin_sanitize_page($page);
         $main_file = $_SERVER["DOCUMENT_ROOT"] . "/admin/parts/" . $page . ".php";
-        if (file_exists($main_file)) {
+        if ($page !== "" && file_exists($main_file)) {
             if ($wrap_start != "") {
                 echo $wrap_start;
             }

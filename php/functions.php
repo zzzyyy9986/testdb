@@ -116,6 +116,79 @@
     }
 
     /**
+     * Проверяет, что POST-запрос к admin API отправлен из админки (базовая CSRF-защита).
+     *
+     * @return void
+     */
+    function admin_require_post_header() {
+        if ($_SERVER["REQUEST_METHOD"] !== "POST") {
+            return;
+        }
+        $header = isset($_SERVER["HTTP_X_ADMIN_REQUEST"]) ? $_SERVER["HTTP_X_ADMIN_REQUEST"] : "";
+        if ($header !== "1") {
+            http_response_code(403);
+            die("Forbidden");
+        }
+    }
+
+    /**
+     * Whitelist имён страниц админки для includeAdminPartsByLvl.
+     *
+     * @param string $page
+     * @return string
+     */
+    function admin_sanitize_page($page) {
+        $allowed = ["", "login", "main", "journals", "dicts"];
+        $page = preg_replace('/[^a-z]/', '', strtolower($page));
+        return in_array($page, $allowed, true) ? $page : "";
+    }
+
+    /**
+     * @param mixed $value
+     * @return float
+     */
+    function db_float($value) {
+        return (float)$value;
+    }
+
+    /**
+     * Собирает URL лендинга с параметрами фильтра.
+     *
+     * @param int $houseId    ID_NL_HOUSES или 0.
+     * @param int $materialId ID_NL_MATERIAL или 0.
+     * @return string Относительный URL (/ или ?house=…&material=…).
+     */
+    function landing_build_filter_url($houseId, $materialId) {
+        $params = [];
+        if ($houseId > 0) {
+            $params["house"] = $houseId;
+        }
+        if ($materialId > 0) {
+            $params["material"] = $materialId;
+        }
+        return $params ? ("?" . http_build_query($params)) : "/";
+    }
+
+    /**
+     * Переключает один фильтр лендинга (повторный клик снимает фильтр).
+     *
+     * @param int    $currentHouse    Текущий ID_NL_HOUSES.
+     * @param int    $currentMaterial Текущий ID_NL_MATERIAL.
+     * @param string $type            house или material.
+     * @param int    $id              ID выбранного значения.
+     * @return string
+     */
+    function landing_toggle_filter($currentHouse, $currentMaterial, $type, $id) {
+        $id = db_int($id);
+        if ($type === "house") {
+            $newHouse = ($currentHouse === $id) ? 0 : $id;
+            return landing_build_filter_url($newHouse, $currentMaterial);
+        }
+        $newMaterial = ($currentMaterial === $id) ? 0 : $id;
+        return landing_build_filter_url($currentHouse, $newMaterial);
+    }
+
+    /**
      * Преобразует закодированное Quill Delta-описание в HTML.
      *
      * @param string|null $raw URL-encoded JSON из поля NL_PROP_RESALE_DESCRIPTION.

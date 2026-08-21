@@ -8,4 +8,6 @@
     user_logout();
 
     db_disconnect();
-?>
+
+    header("Location: /admin/login/", true, 303);
+    die();

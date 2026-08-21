@@ -4,6 +4,7 @@
     include $_SERVER["DOCUMENT_ROOT"] . "/admin/php/functions.admin.php";
 
     admin_require_auth();
+    admin_require_post_header();
     db_connect();
 
     $_SESSION["onlymy"] = isset($_POST["onlymy"]) && $_POST["onlymy"] === "true" ? "true" : "false";

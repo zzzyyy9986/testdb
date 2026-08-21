@@ -146,6 +146,15 @@ button, input, textarea {
     cursor: pointer;
     z-index: 999;
 }
+.main > .ui-tabs-panel {
+    min-height: calc(100vh - 100px);
+    box-sizing: border-box;
+}
+.g-tabs-loading {
+    padding: 24px 16px;
+    color: #666666;
+    font-size: 16px;
+}
 .jqGridFormImgContainer {
 }
 .jqGridFormImgContainer__wrap {

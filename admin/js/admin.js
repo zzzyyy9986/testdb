@@ -1,4 +1,11 @@
-$.ajaxSetup({cache: false});
+$.ajaxSetup({
+    cache: false,
+    beforeSend: function (xhr, settings) {
+        if (settings.type && settings.type.toUpperCase() === "POST" && settings.url && settings.url.indexOf("/admin/php/") !== -1) {
+            xhr.setRequestHeader("X-Admin-Request", "1");
+        }
+    }
+});
 arcticmodal_settings = {
     overlay: {css: {opacity: .9}}
 };
@@ -129,25 +136,99 @@ function setMyColumns(jqgrid) {
 }
 
 var tabsResizeTimer;
+
 function tabsResize() {
     clearTimeout(tabsResizeTimer);
     tabsResizeTimer = setTimeout(tabsResizeImpl, 100);
 }
 
+function tabsPanelMinHeight() {
+    return Math.max(400, windowHeight() - 100);
+}
+
 function tabsResizeImpl() {
-    //alert(parseFloat($(".g-tabs-full:visible").width()) + "; " + parseFloat($(".g-tabs-full:visible .ui-tabs-nav").outerWidth(true)) + "; " + parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("padding-left")) + "; " + parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("padding-right")));
-    var tabWd = Math.round(parseFloat($(".g-tabs-full:visible").width()) - parseFloat($(".g-tabs-full:visible .ui-tabs-nav").outerWidth(true)) - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("margin-left")) - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("padding-left")) - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("border-left-width")) - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("margin-right")) - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("padding-right")) - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("border-right-width")) - 25);
-
-    var tabHg = $(window).height() - parseFloat($(".main").children(".ui-tabs-nav").outerHeight(true)) - parseFloat($(".main").children(".ui-tabs-panel:visible").css("padding-top")) - parseFloat($(".main").children(".ui-tabs-panel:visible").css("padding-bottom")) - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("padding-top")) - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("padding-bottom")) - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("border-top-width")) - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible").css("border-bottom-width"));
-
-    var gridHg = tabHg - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible .ui-jqgrid-toppager").outerHeight(true)) - parseFloat($(".g-tabs-full:visible .ui-tabs-panel:visible .ui-jqgrid-hdiv").outerHeight(true));
-
-    $(".g-tabs-full:visible .ui-tabs-panel").width(tabWd);
-    $(".g-tabs-full:visible .ui-tabs-panel").height(tabHg);
-    var $grid = $(".g-tabs-full:visible .ui-tabs-panel .g-jqgrid");
-    if ($grid.length > 0 && $grid[0].grid) {
-        $grid.jqGrid('setGridHeight', gridHg);
+    var $tabsFull = $(".g-tabs-full:visible");
+    if ($tabsFull.length === 0) {
+        return;
     }
+
+    var $innerPanel = $tabsFull.children(".ui-tabs-panel:visible");
+    if ($innerPanel.length === 0) {
+        return;
+    }
+
+    var tabWd = Math.round(
+        parseFloat($tabsFull.width())
+        - parseFloat($tabsFull.children(".ui-tabs-nav").outerWidth(true))
+        - parseFloat($innerPanel.css("margin-left"))
+        - parseFloat($innerPanel.css("padding-left"))
+        - parseFloat($innerPanel.css("border-left-width"))
+        - parseFloat($innerPanel.css("margin-right"))
+        - parseFloat($innerPanel.css("padding-right"))
+        - parseFloat($innerPanel.css("border-right-width"))
+        - 25
+    );
+
+    var $mainPanel = $(".main").children(".ui-tabs-panel:visible");
+    var tabHg = windowHeight()
+        - parseFloat($(".main").children(".ui-tabs-nav").outerHeight(true) || 0)
+        - parseFloat($mainPanel.css("padding-top") || 0)
+        - parseFloat($mainPanel.css("padding-bottom") || 0)
+        - parseFloat($innerPanel.css("padding-top") || 0)
+        - parseFloat($innerPanel.css("padding-bottom") || 0)
+        - parseFloat($innerPanel.css("border-top-width") || 0)
+        - parseFloat($innerPanel.css("border-bottom-width") || 0);
+
+    if (!isFinite(tabWd) || tabWd <= 0 || !isFinite(tabHg) || tabHg <= 0) {
+        return;
+    }
+
+    var gridHg = tabHg
+        - parseFloat($innerPanel.find(".ui-jqgrid-toppager:visible").outerHeight(true) || 0)
+        - parseFloat($innerPanel.find(".ui-jqgrid-hdiv:visible").outerHeight(true) || 0);
+
+    $tabsFull.children(".ui-tabs-panel").width(tabWd).height(tabHg);
+
+    var $grid = $innerPanel.find(".g-jqgrid");
+    if ($grid.length > 0 && $grid[0].grid && isFinite(gridHg) && gridHg > 0) {
+        $grid.jqGrid("setGridHeight", gridHg);
+    }
+}
+
+function tabsBeforeLoad(event, ui) {
+    var $panel = $(ui.panel);
+    if ($panel.length) {
+        $panel.css("minHeight", tabsPanelMinHeight() + "px");
+    }
+}
+
+function tabsEvalPanelScripts(panel) {
+    $(panel).find("script").each(function () {
+        if (!this.src) {
+            $.globalEval(this.text || this.textContent || this.innerHTML || "");
+        }
+    });
+}
+
+function initDetailTabsInPanel($panel) {
+    if ($panel.find(".objects").length && !$panel.find(".objects").hasClass("ui-tabs")) {
+        detailTabs(".objects");
+    }
+    if ($panel.find(".dicts").length && !$panel.find(".dicts").hasClass("ui-tabs")) {
+        detailTabs(".dicts");
+    }
+}
+
+function tabsAfterLoad(event, ui) {
+    var $panel = $(ui.panel);
+    if (!$panel.length) {
+        return;
+    }
+    $panel.css("minHeight", "");
+    tabsEvalPanelScripts($panel);
+    initDetailTabsInPanel($panel);
+    tabsResize();
+    setTimeout(tabsResize, 250);
 }
 
 function modalResize() {
@@ -375,7 +456,9 @@ $(document).ready(function () {
 
     //  ------------------------------------------- ТАБЫ -------------------------------------------
     $(".main").tabs({
-        load: function (event, ui) {
+        beforeLoad: tabsBeforeLoad,
+        load: tabsAfterLoad,
+        activate: function () {
             tabsResize();
         }
     });
@@ -428,11 +511,15 @@ function showLeftTabs() {
 var firstTimeTabs = true;
 function detailTabs(selector) {
     $(selector).tabs({
+        beforeLoad: tabsBeforeLoad,
         load: function (event, ui) {
             if ((windowWidth() < 1000) && (firstTimeTabs)) {
                 hideLeftTabs();
                 firstTimeTabs = false;
             }
+            tabsAfterLoad(event, ui);
+        },
+        activate: function () {
             tabsResize();
         }
     }).addClass("ui-tabs-vertical ui-helper-clearfix");

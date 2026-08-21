@@ -1,3 +1,4 @@
+<?php require $_SERVER["DOCUMENT_ROOT"] . "/admin/php/fragment_auth.php"; ?>
 <div class="main">
     <ul>
         <li><a href="/admin/parts/journals.php?cache=18">Журналы</a></li>
@@ -14,7 +15,7 @@
     <input id="admin__my" type="checkbox" class="admin__my g-checkbox" <?= $_SESSION["onlymy"] == "1" ? 'checked="checked"' : "" ?> /> <label class="g-label" for="admin__my">Показывать только мои записи</label>
 </div>
 <div class="admin__right">
-    <span class="admin__userName"><?= $_SESSION["NL_USER_SHORT"] ?></span>
+    <span class="admin__userName"><?= htmlspecialchars($_SESSION["NL_USER_SHORT"], ENT_QUOTES, "UTF-8") ?></span>
     <button class="g-btn admin__exit">Выход</button>
     <span class="g-stretch"></span>
 </div>

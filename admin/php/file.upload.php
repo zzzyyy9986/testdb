@@ -4,6 +4,7 @@
     include $_SERVER["DOCUMENT_ROOT"] . "/admin/php/functions.admin.php";
 
     admin_require_auth();
+    admin_require_post_header();
     db_connect();
 
     $allowedExt = ["jpg", "jpeg", "png", "gif", "webp", "pdf", "doc", "docx"];
@@ -40,6 +41,22 @@
     if (!in_array($ext, $allowedExt, true)) {
         http_response_code(400);
         die("Error: disallowed extension");
+    }
+
+    if (function_exists("finfo_open") && is_uploaded_file($baseTmpName)) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = finfo_file($finfo, $baseTmpName);
+        finfo_close($finfo);
+        $allowedMime = [
+            "image/jpeg", "image/png", "image/gif", "image/webp",
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ];
+        if (!in_array($mime, $allowedMime, true)) {
+            http_response_code(400);
+            die("Error: disallowed mime type");
+        }
     }
 
     $tbl = isset($_REQUEST["table"]) ? $_REQUEST["table"] : "";

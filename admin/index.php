@@ -28,7 +28,7 @@
     <link rel="stylesheet" href="/admin/css/jquery.datetimepicker.min.css">
     <link rel="stylesheet" href="/admin/css/jquery.arcticmodal.min.css">
     <link rel="stylesheet" href="/admin/css/quill.snow.min.css">
-    <link rel="stylesheet" href="/admin/css/admin.min.css">
+    <link rel="stylesheet" href="/admin/css/admin.css">
     <link rel="stylesheet" href="/admin/css/print.min.css">
     <script src="/admin/js/vendor/jquery-1.12.4.min.js"></script>
     <script src="/admin/js/vendor/jquery.json.min.js"></script>
