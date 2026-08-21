@@ -1,0 +1,38 @@
+services:
+  web:
+    build: .
+    ports:
+      - "${APP_PORT:-8080}:80"
+    environment:
+      DB_HOST: db
+      DB_USER: ${DB_USER:-testdb}
+      DB_PASSWORD: ${DB_PASSWORD:-testdb}
+      DB_NAME: ${DB_NAME:-testdb}
+      AESKEY: ${AESKEY:-aes_some_key_to_testdb777}
+    volumes:
+      - ./img:/var/www/html/img
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_NAME:-testdb}
+      MYSQL_USER: ${DB_USER:-testdb}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-testdb}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/testdb.sql:/docker-entrypoint-initdb.d/01-testdb.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
